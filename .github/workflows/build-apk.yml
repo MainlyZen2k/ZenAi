@@ -35,8 +35,27 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # We do NOT use android-actions/setup-android here: GitHub runners
+      # already ship the Android SDK with licenses pre-accepted, and that
+      # action is flaky (it re-downloads cmdline-tools from Google and can
+      # die on "Fetching remote repository"). This step is just a safety
+      # net that retries and never blocks the build.
+      - name: Accept Android SDK licenses (preinstalled SDK)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "Using preinstalled sdkmanager: $SDKM"
+          n=0
+          until yes | "$SDKM" --licenses >/dev/null 2>&1; do
+            n=$((n+1))
+            if [ $n -ge 3 ]; then
+              echo "License check kept failing — continuing anyway, licenses are pre-accepted on GitHub runners."
+              exit 0
+            fi
+            echo "Attempt $n failed, retrying in 15s..."
+            sleep 15
+          done
+          echo "Licenses OK"
 
       # Reuses Gradle downloads between builds (big speed-up)
       - name: Cache Gradle

@@ -112,6 +112,16 @@ jobs:
       - name: Generate native Android project
         run: cd "$APP_DIR" && npx expo prebuild --platform android --no-install
 
+      # Expo SDK 52's bundled Compose compiler (1.5.15) requires Kotlin
+      # 1.9.25, but some generated templates still ship 1.9.24 -> build dies
+      # at :expo-modules-core:compileReleaseKotlin. Align it everywhere.
+      - name: Align Kotlin version with Compose compiler
+        run: |
+          cd "$APP_DIR"
+          sed -i 's/1\.9\.24/1.9.25/g' android/build.gradle
+          echo "Kotlin config now:"
+          grep -n "kotlinVersion" android/build.gradle || true
+
       - name: Reuse the saved signing key
         run: |
           mkdir -p "$APP_DIR/android/app"
@@ -124,7 +134,8 @@ jobs:
         run: |
           cd "$APP_DIR/android"
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          # -P forces Kotlin 1.9.25 even if some module template missed it
+          ./gradlew -Pandroid.kotlinVersion=1.9.25 assembleRelease --no-daemon
 
       - name: Save the signing key for next builds
         run: |

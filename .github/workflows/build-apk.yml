@@ -75,6 +75,27 @@ jobs:
           done
           echo "Licenses OK"
 
+      # Pre-install the exact SDK components the Expo build needs (Gradle
+      # would fetch them itself, but doing it here gives us retries and
+      # readable logs if Google's servers hiccup).
+      - name: Install Android SDK components (Expo SDK 52)
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          n=0
+          until yes | "$SDKM" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" >/dev/null 2>&1; do
+            n=$((n+1))
+            if [ $n -ge 3 ]; then
+              echo "Final attempt, shown in full for the log:"
+              yes | "$SDKM" "platforms;android-35" "build-tools;35.0.0" "ndk;26.1.10909125" | tail -25 || true
+              echo "::error::Could not download Android SDK components after 3 tries. Re-run the workflow once — if it fails again, send the log."
+              exit 1
+            fi
+            echo "SDK download attempt $n failed — retrying in 15s..."
+            sleep 15
+          done
+          echo "SDK components ready:"
+          "$SDKM" --list_installed 2>/dev/null | grep -E "platforms;|build-tools;|ndk;" | head -10 || true
+
       # Reuses Gradle downloads between builds (big speed-up)
       - name: Cache Gradle
         uses: actions/cache@v4

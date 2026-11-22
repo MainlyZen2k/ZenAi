@@ -15,6 +15,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Locate the app code (unzip the project zip)
+        run: |
+          if [ -f ZenAI-Expo.zip ]; then
+            echo "Found ZenAI-Expo.zip — extracting..."
+            unzip -oq ZenAI-Expo.zip
+          elif [ "$(ls ./*.zip 2>/dev/null | wc -l)" -eq 1 ]; then
+            echo "No ZenAI-Expo.zip, but exactly one zip found — using it..."
+            unzip -oq ./*.zip
+          fi
+          APP_DIR=""
+          for f in $(find . -maxdepth 3 -name app.json -not -path './.git/*' -not -path '*/node_modules/*'); do
+            if grep -q '"expo"' "$f"; then APP_DIR="$(dirname "$f")"; break; fi
+          done
+          if [ -z "$APP_DIR" ]; then
+            echo "::error::No Expo project found in this repo. Upload ZenAI-Expo.zip to the top level of the repo (or the extracted files: package.json, App.tsx, app.json, eas.json, assets/)."
+            exit 1
+          fi
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
+          echo "Building from folder: $APP_DIR"
+
       # Keep the same signing key between builds. Without this, every new
       # APK would have a different signature and Android would refuse to
       # update the app over the old one (you'd have to uninstall first).
@@ -35,16 +55,14 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      # We do NOT use android-actions/setup-android here: GitHub runners
-      # already ship the Android SDK with licenses pre-accepted, and that
-      # action is flaky (it re-downloads cmdline-tools from Google and can
-      # die on "Fetching remote repository"). This step is just a safety
-      # net that retries and never blocks the build.
+      # GitHub runners already ship the Android SDK with licenses
+      # pre-accepted. The android-actions/setup-android helper re-downloads
+      # tools from Google and is flaky, so we skip it and just run a
+      # retrying license check that can never block the build.
       - name: Accept Android SDK licenses (preinstalled SDK)
         run: |
           SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "Using preinstalled sdkmanager: $SDKM"
           n=0
           until yes | "$SDKM" --licenses >/dev/null 2>&1; do
             n=$((n+1))
@@ -68,32 +86,32 @@ jobs:
           restore-keys: gradle-${{ runner.os }}-
 
       - name: Install JavaScript dependencies
-        run: npm install --no-audit --no-fund
+        run: cd "$APP_DIR" && npm install --no-audit --no-fund
 
       - name: Generate native Android project
-        run: npx expo prebuild --platform android --no-install
+        run: cd "$APP_DIR" && npx expo prebuild --platform android --no-install
 
       - name: Reuse the saved signing key
         run: |
-          mkdir -p android/app
+          mkdir -p "$APP_DIR/android/app"
           if [ -f ~/zen-keystore/debug.keystore ]; then
-            cp ~/zen-keystore/debug.keystore android/app/debug.keystore
+            cp ~/zen-keystore/debug.keystore "$APP_DIR/android/app/debug.keystore"
             echo "Reusing previous signing key"
           fi
 
       - name: Build the APK
         run: |
-          cd android
+          cd "$APP_DIR/android"
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon
 
       - name: Save the signing key for next builds
         run: |
           mkdir -p ~/zen-keystore
-          cp android/app/debug.keystore ~/zen-keystore/debug.keystore
+          cp "$APP_DIR/android/app/debug.keystore" ~/zen-keystore/debug.keystore
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk Zen-AI.apk
+        run: cp "$APP_DIR/android/app/build/outputs/apk/release/app-release.apk" Zen-AI.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

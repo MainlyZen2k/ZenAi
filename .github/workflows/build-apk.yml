@@ -173,3 +173,65 @@ jobs:
           name: Zen-AI-APK
           path: Zen-AI.apk
           retention-days: 30
+
+  # ============================================================
+  #  Publishes the WEBSITE (the real Zen AI app) to GitHub Pages.
+  #  Live at:  https://<your-username>.github.io/<repo-name>/
+  #  ONE-TIME SETUP: repo -> Settings -> Pages -> Source: "GitHub Actions"
+  # ============================================================
+  web:
+    name: Publish Zen AI Website
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: "pages"
+      cancel-in-progress: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract the web app source
+        run: |
+          if [ -f zen-ai-webapp-source.zip ]; then
+            echo "Found zen-ai-webapp-source.zip — extracting..."
+            unzip -oq zen-ai-webapp-source.zip -d webapp
+          else
+            echo "::error::zen-ai-webapp-source.zip was not found at the top of this repo. That zip is the WEBSITE (it publishes to GitHub Pages). Upload it next to ZenAI-Expo.zip."
+            exit 1
+          fi
+          echo "Web app files:"
+          ls webapp | head -20
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JavaScript dependencies
+        run: cd webapp && npm install --no-audit --no-fund
+
+      # Builds a static site into webapp/out/. NEXT_PUBLIC_BASE_PATH points
+      # every asset at /<repo-name> so it matches the github.io sub-path.
+      - name: Build the static site
+        run: cd webapp && NEXT_PUBLIC_BASE_PATH="/${GITHUB_REPOSITORY#*/}" npm run build
+
+      - name: Make GitHub serve every file (.nojekyll)
+        run: echo > webapp/out/.nojekyll
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: webapp/out
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

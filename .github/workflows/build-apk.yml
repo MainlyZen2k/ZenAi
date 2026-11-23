@@ -20,16 +20,27 @@ jobs:
           if [ -f ZenAI-Expo.zip ]; then
             echo "Found ZenAI-Expo.zip — extracting..."
             unzip -oq ZenAI-Expo.zip
-          elif [ "$(ls ./*.zip 2>/dev/null | wc -l)" -eq 1 ]; then
-            echo "No ZenAI-Expo.zip, but exactly one zip found — using it..."
-            unzip -oq ./*.zip
+          else
+            COUNT=$(ls ./*.zip 2>/dev/null | wc -l)
+            if [ "$COUNT" -eq 1 ]; then
+              ZIPFILE=$(ls ./*.zip | head -1)
+              echo "No ZenAI-Expo.zip, but exactly one zip found ($ZIPFILE) — trying it..."
+              unzip -oq "$ZIPFILE"
+              if [ -f next.config.ts ] || [ -f next.config.js ] || [ -f next.config.mjs ] || [ -d src/app ]; then
+                echo "::error::That zip is the WEB APP source (the Next.js website). The website goes to Vercel — it cannot build an APK. Download 'ZenAI-Expo.zip' from your delivery folder and upload THAT to this repo instead (both zips can live here; this workflow prefers ZenAI-Expo.zip)."
+                exit 1
+              fi
+            elif [ "$COUNT" -gt 1 ]; then
+              echo "::error::No ZenAI-Expo.zip found and $COUNT other zips are present. The APK project zip must be named exactly 'ZenAI-Expo.zip' at the top of the repo."
+              exit 1
+            fi
           fi
           APP_DIR=""
           for f in $(find . -maxdepth 3 -name app.json -not -path './.git/*' -not -path '*/node_modules/*'); do
             if grep -q '"expo"' "$f"; then APP_DIR="$(dirname "$f")"; break; fi
           done
           if [ -z "$APP_DIR" ]; then
-            echo "::error::No Expo project found in this repo. Upload ZenAI-Expo.zip to the top level of the repo (or the extracted files: package.json, App.tsx, app.json, eas.json, assets/)."
+            echo "::error::No Expo (APK) project found in this repo. This workflow builds the ANDROID APP, so it needs 'ZenAI-Expo.zip' at the top level. (Tip: the web app source zip belongs on Vercel, not GitHub.)"
             exit 1
           fi
           echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"

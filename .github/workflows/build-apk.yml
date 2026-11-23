@@ -134,8 +134,19 @@ jobs:
         run: |
           cd "$APP_DIR/android"
           chmod +x gradlew
-          # -P forces Kotlin 1.9.25 even if some module template missed it
-          ./gradlew -Pandroid.kotlinVersion=1.9.25 assembleRelease --no-daemon
+          set +e
+          # -P keeps Kotlin aligned with the official SDK 52 template value
+          ./gradlew -Pandroid.kotlinVersion=1.9.25 assembleRelease --no-daemon 2>&1 | tee /tmp/gradle.log
+          code=${PIPESTATUS[0]}
+          if [ $code -ne 0 ]; then
+            echo ""
+            echo "================= ACTUAL COMPILE ERRORS ================="
+            grep -n "^e: " /tmp/gradle.log | head -40 || true
+            echo "----------------- FAILURE TAIL --------------------------"
+            tail -n 40 /tmp/gradle.log || true
+            echo "========================================================="
+          fi
+          exit $code
 
       - name: Save the signing key for next builds
         run: |
